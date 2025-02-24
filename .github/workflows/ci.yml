@@ -2,6 +2,10 @@ name: ci
 
 on:
   push:
+    branches:
+     - main
+     - next
+     - 'v*'
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -10,22 +14,44 @@ on:
       - 'docs/**'
       - '*.md'
 
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+  group: "${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
+  cancel-in-progress: true
+
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
+  dependency-review:
+      name: Dependency Review
+      if: github.event_name == 'pull_request'
+      runs-on: ubuntu-latest
+      permissions:
+        contents: read
+      steps:
+          - name: Check out repo
+            uses: actions/checkout@v4
+            with:
+              persist-credentials: false
 
-    strategy:
-      matrix:
-        node-version: [10, 12, 14, 16]
-        os: [macos-latest, ubuntu-latest, windows-latest]
+          - name: Dependency review
+            uses: actions/dependency-review-action@v4
 
+  check-licenses:
+    name: Check licenses
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Use Node.js
-        uses: actions/setup-node@v2.1.5
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: package.json
+          check-latest: true
 
       - name: Install
         run: |
@@ -33,33 +59,161 @@ jobs:
 
       - name: Check licenses
         run: |
-          npm run license-checker
+          npx license-checker --production --summary --onlyAllow="0BSD;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;MIT;"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: package.json
+          check-latest: true
+
+      - name: Install
+        run: |
+          npm install --ignore-scripts
+
+      - name: Lint code
+        run: |
+          npm run lint
+
+  coverage-nix:
+    needs:
+      - lint
+    permissions:
+      contents: read
+    uses: ./.github/workflows/coverage-nix.yml
+
+  coverage-win:
+    needs:
+      - lint
+    permissions:
+      contents: read
+    uses: ./.github/workflows/coverage-win.yml
+
+  test-unit:
+    needs:
+      - lint
+      - coverage-nix
+      - coverage-win
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        node-version: [20, 22]
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: package.json
+          check-latest: true
+
+      - name: Install
+        run: |
+          npm install --ignore-scripts
 
       - name: Run tests
         run: |
-          npm run test:ci
+          npm run unit
 
-      - name: Coveralls Parallel
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.github_token }}
-          parallel: true
-          flag-name: run-${{ matrix.node-version }}-${{ matrix.os }}
+  test-typescript:
+    needs:
+      - lint
+      - coverage-nix
+      - coverage-win
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: read
 
-  coverage:
-    needs: test
-    runs-on: ubuntu-latest
     steps:
-      - name: Coveralls Finished
-        uses: coverallsapp/github-action@master
+      - uses: actions/checkout@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          parallel-finished: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package.json
+          check-latest: true
+
+      - name: Install
+        run: |
+          npm install --ignore-scripts
+
+      - name: Run typescript tests
+        run: |
+          npm run test:typescript
+        env:
+          NODE_OPTIONS: no-network-family-autoselection
+
+  package:
+    needs:
+      - test-typescript
+      - test-unit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: package.json
+          check-latest: true
+      - name: install fastify
+        run: |
+          npm install --ignore-scripts
+      - name: install webpack stack
+        run: |
+          cd test/bundler/webpack && npm install
+      - name: Test webpack bundle
+        run: |
+          cd test/bundler/webpack && npm run test
+      - name: install esbuild stack
+        run: |
+          cd test/bundler/esbuild && npm install
+      - name: Test esbuild bundle
+        run: |
+          cd test/bundler/esbuild && npm run test
 
   automerge:
-    needs: test
+    if: >
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.user.login == 'dependabot[bot]'
+    needs:
+      - test-typescript
+      - test-unit
+      - package
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
     steps:
-      - uses: fastify/github-action-merge-dependabot@v2.1.1
+      - uses: fastify/github-action-merge-dependabot@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

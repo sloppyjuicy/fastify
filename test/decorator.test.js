@@ -1,20 +1,26 @@
 'use strict'
 
-/* eslint no-prototype-builtins: 0 */
-
 const t = require('tap')
 const test = t.test
 const Fastify = require('..')
 const fp = require('fastify-plugin')
 const sget = require('simple-get').concat
 const symbols = require('../lib/symbols.js')
-const proxyquire = require('proxyquire')
 
 test('server methods should exist', t => {
   t.plan(2)
   const fastify = Fastify()
   t.ok(fastify.decorate)
   t.ok(fastify.hasDecorator)
+})
+
+test('should check if the given decoration already exist when null', t => {
+  t.plan(1)
+  const fastify = Fastify()
+  fastify.decorate('null', null)
+  fastify.ready(() => {
+    t.ok(fastify.hasDecorator('null'))
+  })
 })
 
 test('server methods should be encapsulated via .register', t => {
@@ -104,12 +110,11 @@ test('should pass error for missing request decorator', t => {
 })
 
 test('decorateReply inside register', t => {
-  t.plan(12)
+  t.plan(11)
   const fastify = Fastify()
 
   fastify.register((instance, opts, done) => {
     instance.decorateReply('test', 'test')
-    t.ok(instance[symbols.kReply].prototype.test)
 
     instance.get('/yes', (req, reply) => {
       t.ok(reply.test, 'test exists')
@@ -124,9 +129,9 @@ test('decorateReply inside register', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -172,9 +177,9 @@ test('decorateReply as plugin (inside .after)', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -220,9 +225,9 @@ test('decorateReply as plugin (outside .after)', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -247,12 +252,11 @@ test('decorateReply as plugin (outside .after)', t => {
 })
 
 test('decorateRequest inside register', t => {
-  t.plan(12)
+  t.plan(11)
   const fastify = Fastify()
 
   fastify.register((instance, opts, done) => {
     instance.decorateRequest('test', 'test')
-    t.ok(instance[symbols.kRequest].prototype.test)
 
     instance.get('/yes', (req, reply) => {
       t.ok(req.test, 'test exists')
@@ -267,9 +271,9 @@ test('decorateRequest inside register', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -315,9 +319,9 @@ test('decorateRequest as plugin (inside .after)', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -363,9 +367,9 @@ test('decorateRequest as plugin (outside .after)', t => {
     reply.send({ hello: 'world' })
   })
 
-  fastify.listen(0, err => {
+  fastify.listen({ port: 0 }, err => {
     t.error(err)
-    fastify.server.unref()
+    t.teardown(() => { fastify.close() })
 
     sget({
       method: 'GET',
@@ -425,6 +429,15 @@ test('hasRequestDecorator', t => {
     t.ok(fastify.hasRequestDecorator(requestDecoratorName))
   })
 
+  t.test('should check if the given request decoration already exist when null', t => {
+    t.plan(2)
+    const fastify = Fastify()
+
+    t.notOk(fastify.hasRequestDecorator(requestDecoratorName))
+    fastify.decorateRequest(requestDecoratorName, null)
+    t.ok(fastify.hasRequestDecorator(requestDecoratorName))
+  })
+
   t.test('should be plugin encapsulable', t => {
     t.plan(4)
     const fastify = Fastify()
@@ -478,6 +491,15 @@ test('hasReplyDecorator', t => {
 
     t.notOk(fastify.hasReplyDecorator(replyDecoratorName))
     fastify.decorateReply(replyDecoratorName, 42)
+    t.ok(fastify.hasReplyDecorator(replyDecoratorName))
+  })
+
+  t.test('should check if the given reply decoration already exist when null', t => {
+    t.plan(2)
+    const fastify = Fastify()
+
+    t.notOk(fastify.hasReplyDecorator(replyDecoratorName))
+    fastify.decorateReply(replyDecoratorName, null)
     t.ok(fastify.hasReplyDecorator(replyDecoratorName))
   })
 
@@ -617,7 +639,7 @@ test('should register empty values', t => {
 
   fastify.register((instance, opts, done) => {
     instance.decorate('test', null)
-    t.ok(instance.hasOwnProperty('test'))
+    t.ok(Object.hasOwn(instance, 'test'))
     done()
   })
 
@@ -739,7 +761,7 @@ test('decorate* should throw if called after ready', async t => {
     })
   })
 
-  await fastify.listen(0)
+  await fastify.listen({ port: 0 })
   try {
     fastify.decorate('test', true)
     t.fail('should not decorate')
@@ -764,45 +786,44 @@ test('decorate* should throw if called after ready', async t => {
   await fastify.close()
 })
 
-test('decorate* should emit warning if an array is passed', t => {
+test('decorate* should emit error if an array is passed', t => {
   t.plan(2)
-  function onWarning (code, name) {
-    t.equal(name, 'test_array')
-    t.equal(code, 'FSTDEP006')
-  }
-  const warning = {
-    emit: onWarning
-  }
 
-  const decorate = proxyquire('../lib/decorate', { './warnings': warning })
-  const fastify = proxyquire('..', { './lib/decorate.js': decorate })()
-  fastify.decorateRequest('test_array', [])
+  const fastify = Fastify()
+  try {
+    fastify.decorateRequest('test_array', [])
+    t.fail('should not decorate')
+  } catch (err) {
+    t.same(err.code, 'FST_ERR_DEC_REFERENCE_TYPE')
+    t.same(err.message, "The decorator 'test_array' of type 'object' is a reference type. Use the { getter, setter } interface instead.")
+  }
+})
+
+test('server.decorate should not emit error if reference type is passed', async t => {
+  t.plan(1)
+
+  const fastify = Fastify()
+  fastify.decorate('test_array', [])
+  fastify.decorate('test_object', {})
+  await fastify.ready()
+  t.pass('Done')
 })
 
 test('decorate* should emit warning if object type is passed', t => {
   t.plan(2)
-  function onWarning (code, name) {
-    t.equal(name, 'test_object')
-    t.equal(code, 'FSTDEP006')
-  }
-  const warning = {
-    emit: onWarning
-  }
 
-  const decorate = proxyquire('../lib/decorate', { './warnings': warning })
-  const fastify = proxyquire('..', { './lib/decorate.js': decorate })()
-  fastify.decorateRequest('test_object', { foo: 'bar' })
+  const fastify = Fastify()
+  try {
+    fastify.decorateRequest('test_object', { foo: 'bar' })
+    t.fail('should not decorate')
+  } catch (err) {
+    t.same(err.code, 'FST_ERR_DEC_REFERENCE_TYPE')
+    t.same(err.message, "The decorator 'test_object' of type 'object' is a reference type. Use the { getter, setter } interface instead.")
+  }
 })
 
 test('decorate* should not emit warning if object with getter/setter is passed', t => {
-  function onWarning (warning) {
-    t.fail('Should not call a warn')
-  }
-  const warning = {
-    emit: onWarning
-  }
-  const decorate = proxyquire('../lib/decorate', { './warnings': warning })
-  const fastify = proxyquire('..', { './lib/decorate.js': decorate })()
+  const fastify = Fastify()
 
   fastify.decorateRequest('test_getter_setter', {
     setter (val) {
@@ -815,16 +836,74 @@ test('decorate* should not emit warning if object with getter/setter is passed',
   t.end('Done')
 })
 
-test('decorate* should not emit warning if string,bool,numbers are passed', t => {
-  function onWarning (warning) {
-    t.fail('Should not call a warn')
-  }
-  const warning = {
-    emit: onWarning
-  }
+test('decorateRequest with getter/setter can handle encapsulation', async t => {
+  t.plan(24)
 
-  const decorate = proxyquire('../lib/decorate', { './warnings': warning })
-  const fastify = proxyquire('..', { './lib/decorate.js': decorate })()
+  const fastify = Fastify({ logger: true })
+
+  fastify.decorateRequest('test_getter_setter_holder')
+  fastify.decorateRequest('test_getter_setter', {
+    getter () {
+      this.test_getter_setter_holder ??= {}
+      return this.test_getter_setter_holder
+    }
+  })
+
+  fastify.get('/', async function (req, reply) {
+    t.same(req.test_getter_setter, {}, 'a getter')
+    req.test_getter_setter.a = req.id
+    t.same(req.test_getter_setter, { a: req.id })
+  })
+
+  fastify.addHook('onResponse', async function hook (req, reply) {
+    t.same(req.test_getter_setter, { a: req.id })
+  })
+
+  await Promise.all([
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200))
+  ])
+})
+
+test('decorateRequest with getter/setter can handle encapsulation with arrays', async t => {
+  t.plan(24)
+
+  const fastify = Fastify({ logger: true })
+
+  fastify.decorateRequest('array_holder')
+  fastify.decorateRequest('my_array', {
+    getter () {
+      this.array_holder ??= []
+      return this.array_holder
+    }
+  })
+
+  fastify.get('/', async function (req, reply) {
+    t.same(req.my_array, [])
+    req.my_array.push(req.id)
+    t.same(req.my_array, [req.id])
+  })
+
+  fastify.addHook('onResponse', async function hook (req, reply) {
+    t.same(req.my_array, [req.id])
+  })
+
+  await Promise.all([
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200)),
+    fastify.inject('/').then(res => t.same(res.statusCode, 200))
+  ])
+})
+
+test('decorate* should not emit error if string,bool,numbers are passed', t => {
+  const fastify = Fastify()
 
   fastify.decorateRequest('test_str', 'foo')
   fastify.decorateRequest('test_bool', true)
@@ -875,5 +954,309 @@ test('Request/reply decorators should be able to access the server instance', as
   function nestedAssert () {
     t.not(this.server, server)
     t.equal(this.server.foo, 'bar')
+  }
+})
+
+test('plugin required decorators', async t => {
+  const plugin1 = fp(
+    async (instance) => {
+      instance.decorateRequest('someThing', null)
+
+      instance.addHook('onRequest', async (request, reply) => {
+        request.someThing = 'hello'
+      })
+    },
+    {
+      name: 'custom-plugin-one'
+    }
+  )
+
+  const plugin2 = fp(
+    async () => {
+      // nothing
+    },
+    {
+      name: 'custom-plugin-two',
+      dependencies: ['custom-plugin-one'],
+      decorators: {
+        request: ['someThing']
+      }
+    }
+  )
+
+  const app = Fastify()
+  app.register(plugin1)
+  app.register(plugin2)
+  await app.ready()
+})
+
+test('decorateRequest/decorateReply empty string', t => {
+  t.plan(7)
+  const fastify = Fastify()
+
+  fastify.decorateRequest('test', '')
+  fastify.decorateReply('test2', '')
+  fastify.get('/yes', (req, reply) => {
+    t.equal(req.test, '')
+    t.equal(reply.test2, '')
+    reply.send({ hello: 'world' })
+  })
+  t.teardown(fastify.close.bind(fastify))
+
+  fastify.listen({ port: 0 }, err => {
+    t.error(err)
+    t.teardown(() => { fastify.close() })
+
+    sget({
+      method: 'GET',
+      url: 'http://localhost:' + fastify.server.address().port + '/yes'
+    }, (err, response, body) => {
+      t.error(err)
+      t.equal(response.statusCode, 200)
+      t.equal(response.headers['content-length'], '' + body.length)
+      t.same(JSON.parse(body), { hello: 'world' })
+    })
+  })
+})
+
+test('decorateRequest/decorateReply is undefined', t => {
+  t.plan(7)
+  const fastify = Fastify()
+
+  fastify.decorateRequest('test', undefined)
+  fastify.decorateReply('test2', undefined)
+  fastify.get('/yes', (req, reply) => {
+    t.equal(req.test, undefined)
+    t.equal(reply.test2, undefined)
+    reply.send({ hello: 'world' })
+  })
+  t.teardown(fastify.close.bind(fastify))
+
+  fastify.listen({ port: 0 }, err => {
+    t.error(err)
+    t.teardown(() => { fastify.close() })
+
+    sget({
+      method: 'GET',
+      url: 'http://localhost:' + fastify.server.address().port + '/yes'
+    }, (err, response, body) => {
+      t.error(err)
+      t.equal(response.statusCode, 200)
+      t.equal(response.headers['content-length'], '' + body.length)
+      t.same(JSON.parse(body), { hello: 'world' })
+    })
+  })
+})
+
+test('decorateRequest/decorateReply is not set to a value', t => {
+  t.plan(7)
+  const fastify = Fastify()
+
+  fastify.decorateRequest('test')
+  fastify.decorateReply('test2')
+  fastify.get('/yes', (req, reply) => {
+    t.equal(req.test, undefined)
+    t.equal(reply.test2, undefined)
+    reply.send({ hello: 'world' })
+  })
+  t.teardown(fastify.close.bind(fastify))
+
+  fastify.listen({ port: 0 }, err => {
+    t.error(err)
+    t.teardown(() => { fastify.close() })
+
+    sget({
+      method: 'GET',
+      url: 'http://localhost:' + fastify.server.address().port + '/yes'
+    }, (err, response, body) => {
+      t.error(err)
+      t.equal(response.statusCode, 200)
+      t.equal(response.headers['content-length'], '' + body.length)
+      t.same(JSON.parse(body), { hello: 'world' })
+    })
+  })
+})
+
+test('decorateRequest with dependencies', (t) => {
+  t.plan(2)
+  const app = Fastify()
+
+  const decorator1 = 'bar'
+  const decorator2 = 'foo'
+
+  app.decorate('decorator1', decorator1)
+  app.decorateRequest('decorator1', decorator1)
+
+  if (
+    app.hasDecorator('decorator1') &&
+    app.hasRequestDecorator('decorator1')
+  ) {
+    t.doesNotThrow(() => app.decorateRequest('decorator2', decorator2, ['decorator1']))
+    t.ok(app.hasRequestDecorator('decorator2'))
+  }
+})
+
+test('decorateRequest with dependencies (functions)', (t) => {
+  t.plan(2)
+  const app = Fastify()
+
+  const decorator1 = () => 'bar'
+  const decorator2 = () => 'foo'
+
+  app.decorate('decorator1', decorator1)
+  app.decorateRequest('decorator1', decorator1)
+
+  if (
+    app.hasDecorator('decorator1') &&
+    app.hasRequestDecorator('decorator1')
+  ) {
+    t.doesNotThrow(() => app.decorateRequest('decorator2', decorator2, ['decorator1']))
+    t.ok(app.hasRequestDecorator('decorator2'))
+  }
+})
+
+test('chain of decorators on Request', async (t) => {
+  const fastify = Fastify()
+  fastify.register(fp(async function (fastify) {
+    fastify.decorateRequest('foo', 'toto')
+    fastify.decorateRequest('bar', () => 'tata')
+  }, {
+    name: 'first'
+  }))
+
+  fastify.get('/foo', async function (request, reply) {
+    return request.foo
+  })
+  fastify.get('/bar', function (request, reply) {
+    return request.bar()
+  })
+  fastify.register(async function second (fastify) {
+    fastify.get('/foo', async function (request, reply) {
+      return request.foo
+    })
+    fastify.get('/bar', async function (request, reply) {
+      return request.bar()
+    })
+    fastify.register(async function fourth (fastify) {
+      fastify.get('/plugin3/foo', async function (request, reply) {
+        return request.foo
+      })
+      fastify.get('/plugin3/bar', function (request, reply) {
+        return request.bar()
+      })
+    })
+    fastify.register(fp(async function (fastify) {
+      fastify.decorateRequest('fooB', 'toto')
+      fastify.decorateRequest('barB', () => 'tata')
+    }, {
+      name: 'third'
+    }))
+  },
+  { prefix: '/plugin2', name: 'plugin2' }
+  )
+
+  await fastify.ready()
+
+  {
+    const response = await fastify.inject('/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/bar')
+    t.equal(response.body, 'tata')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/bar')
+    t.equal(response.body, 'tata')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/plugin3/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/plugin3/bar')
+    t.equal(response.body, 'tata')
+  }
+})
+
+test('chain of decorators on Reply', async (t) => {
+  const fastify = Fastify()
+  fastify.register(fp(async function (fastify) {
+    fastify.decorateReply('foo', 'toto')
+    fastify.decorateReply('bar', () => 'tata')
+  }, {
+    name: 'first'
+  }))
+
+  fastify.get('/foo', async function (request, reply) {
+    return reply.foo
+  })
+  fastify.get('/bar', function (request, reply) {
+    return reply.bar()
+  })
+  fastify.register(async function second (fastify) {
+    fastify.get('/foo', async function (request, reply) {
+      return reply.foo
+    })
+    fastify.get('/bar', async function (request, reply) {
+      return reply.bar()
+    })
+    fastify.register(async function fourth (fastify) {
+      fastify.get('/plugin3/foo', async function (request, reply) {
+        return reply.foo
+      })
+      fastify.get('/plugin3/bar', function (request, reply) {
+        return reply.bar()
+      })
+    })
+    fastify.register(fp(async function (fastify) {
+      fastify.decorateReply('fooB', 'toto')
+      fastify.decorateReply('barB', () => 'tata')
+    }, {
+      name: 'third'
+    }))
+  },
+  { prefix: '/plugin2', name: 'plugin2' }
+  )
+
+  await fastify.ready()
+
+  {
+    const response = await fastify.inject('/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/bar')
+    t.equal(response.body, 'tata')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/bar')
+    t.equal(response.body, 'tata')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/plugin3/foo')
+    t.equal(response.body, 'toto')
+  }
+
+  {
+    const response = await fastify.inject('/plugin2/plugin3/bar')
+    t.equal(response.body, 'tata')
   }
 })
