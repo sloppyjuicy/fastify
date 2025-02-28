@@ -1,5 +1,7 @@
-ts: false
-jsx: false
-flow: false
-check-coverage: true
-coverage: true
+# vim: set filetype=yaml :
+node-arg:
+  - '--allow-natives-syntax'
+
+include:
+  - 'test/**/*.test.js'
+  - 'test/**/*.test.mjs'

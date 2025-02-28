@@ -1,6 +1,6 @@
-import fastify, { FastifyBodyParser, FastifyContentTypeParser } from '../../fastify'
+import fastify, { FastifyBodyParser } from '../../fastify'
 import { expectError, expectType } from 'tsd'
-import { IncomingMessage } from 'http'
+import { IncomingMessage } from 'node:http'
 import { FastifyRequest } from '../../types/request'
 
 expectType<void>(fastify().addContentTypeParser('contentType', function (request, payload, done) {
@@ -62,3 +62,11 @@ expectType<FastifyBodyParser<string>>(fastify().getDefaultJsonParser('error', 'i
 expectError(fastify().getDefaultJsonParser('error', 'skip'))
 
 expectError(fastify().getDefaultJsonParser('nothing', 'ignore'))
+
+expectType<void>(fastify().removeAllContentTypeParsers())
+expectError(fastify().removeAllContentTypeParsers('contentType'))
+
+expectType<void>(fastify().removeContentTypeParser('contentType'))
+expectType<void>(fastify().removeContentTypeParser(/contentType+.*/))
+expectType<void>(fastify().removeContentTypeParser(['contentType', /contentType+.*/]))
+expectError(fastify().removeContentTypeParser({}))

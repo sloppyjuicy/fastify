@@ -2,7 +2,7 @@
 
 const { test } = require('tap')
 const split = require('split2')
-const net = require('net')
+const net = require('node:net')
 const Fastify = require('../fastify')
 
 process.removeAllListeners('warning')
@@ -19,11 +19,11 @@ const lifecycleHooks = [
   'onError'
 ]
 
-test('skip automatic reply.send() with reply.sent = true and a body', (t) => {
+test('skip automatic reply.send() with reply.hijack and a body', (t) => {
   const stream = split(JSON.parse)
   const app = Fastify({
     logger: {
-      stream: stream
+      stream
     }
   })
 
@@ -33,7 +33,7 @@ test('skip automatic reply.send() with reply.sent = true and a body', (t) => {
   })
 
   app.get('/', (req, reply) => {
-    reply.sent = true
+    reply.hijack()
     reply.raw.end('hello world')
 
     return Promise.resolve('this will be skipped')
@@ -48,11 +48,11 @@ test('skip automatic reply.send() with reply.sent = true and a body', (t) => {
   })
 })
 
-test('skip automatic reply.send() with reply.sent = true and no body', (t) => {
+test('skip automatic reply.send() with reply.hijack and no body', (t) => {
   const stream = split(JSON.parse)
   const app = Fastify({
     logger: {
-      stream: stream
+      stream
     }
   })
 
@@ -62,7 +62,7 @@ test('skip automatic reply.send() with reply.sent = true and no body', (t) => {
   })
 
   app.get('/', (req, reply) => {
-    reply.sent = true
+    reply.hijack()
     reply.raw.end('hello world')
 
     return Promise.resolve()
@@ -77,11 +77,11 @@ test('skip automatic reply.send() with reply.sent = true and no body', (t) => {
   })
 })
 
-test('skip automatic reply.send() with reply.sent = true and an error', (t) => {
+test('skip automatic reply.send() with reply.hijack and an error', (t) => {
   const stream = split(JSON.parse)
   const app = Fastify({
     logger: {
-      stream: stream
+      stream
     }
   })
 
@@ -96,7 +96,7 @@ test('skip automatic reply.send() with reply.sent = true and an error', (t) => {
   })
 
   app.get('/', (req, reply) => {
-    reply.sent = true
+    reply.hijack()
     reply.raw.end('hello world')
 
     return Promise.reject(new Error('kaboom'))
@@ -125,7 +125,7 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
       const stream = split(JSON.parse)
       const app = Fastify({
         logger: {
-          stream: stream
+          stream
         }
       })
 
@@ -170,7 +170,7 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
       const stream = split(JSON.parse)
       const app = Fastify({
         logger: {
-          stream: stream
+          stream
         }
       })
       t.teardown(() => app.close())
@@ -201,10 +201,10 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
 
       nextHooks.forEach(h => app.addHook(h, async (req, reply) => t.fail(`${h} should not be called`)))
 
-      app.listen(0, err => {
+      app.listen({ port: 0 }, err => {
         t.error(err)
         const client = net.createConnection({ port: (app.server.address()).port }, () => {
-          client.write('GET / HTTP/1.1\r\n\r\n')
+          client.write('GET / HTTP/1.1\r\nHost: example.com\r\n\r\n')
 
           let chunks = ''
           client.setEncoding('utf8')
@@ -220,11 +220,11 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
       })
     })
 
-    test('Throwing an error doesnt trigger any hooks', t => {
+    test('Throwing an error does not trigger any hooks', t => {
       const stream = split(JSON.parse)
       const app = Fastify({
         logger: {
-          stream: stream
+          stream
         }
       })
       t.teardown(() => app.close())
@@ -274,7 +274,7 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
       const stream = split(JSON.parse)
       const app = Fastify({
         logger: {
-          stream: stream
+          stream
         }
       })
 
@@ -297,7 +297,7 @@ function testHandlerOrBeforeHandlerHook (test, hookOrHandler) {
       } else {
         app.addHook(hookOrHandler, async (req, reply) => {
           reply.hijack()
-          reply.send('hello from reply.send()')
+          return reply.send('hello from reply.send()')
         })
         app.get('/', (req, reply) => t.fail('Handler should not be called'))
       }

@@ -1,16 +1,17 @@
 .editorconfig
 .gitattributes
-.git
-.DS_Store
 .gitignore
 .github
 .nyc_output
+.DS_Store
 coverage/
 tools/
+.tap/
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
-.dependabot
+EXPENSE_POLICY.md
 .clinic
+.gitpod.yml
 
 # test certification
 test/https/fastify.cert
